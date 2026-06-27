@@ -1,0 +1,46 @@
+# CTF Pwn - Advanced Techniques
+
+## Seccomp Bypass
+
+### openat2 Bypass
+`openat2` (syscall 437, Linux 5.6+) frequently missed in seccomp filters blocking `open`/`openat`.
+
+### Conditional Buffer Address Restrictions
+`read()` KILL if buf ≤ code_region + X → read to high addresses. `write()` KILL if buf ≥ code_region + Y → write from low addresses. Bypass: read into allowed region, `rep movsb` copy to write-allowed region.
+
+### Shellcode Without Relocations
+pwntools `asm()` fails with forward label references. Fix with manual jmp/call:
+```python
+body = asm('''pop rbx; mov r14, rbx; and r14, -4096; mov rsi, rbx; ...''')
+call_offset = -(len(body) + 5)
+call_instr = b'\xe8' + p32(call_offset & 0xffffffff)
+shellcode = jmp_instr + body + call_instr + b"filename.txt\x00"
+```
+
+## Use-After-Free (UAF)
+
+Menu create/delete/view where `free()` doesn't NULL pointer. Create object A → leak address → free A (dangling pointer) → allocate object B same size (reuses chunk) → B overwrites A's function pointer with win → trigger A's callback.
+
+## JIT Exploits
+Off-by-one in instruction encoding → misaligned machine code. Embed shellcode as operand bytes of subtraction operations, chain with 2-byte `jmp` instructions.
+
+## ret2dlresolve
+Forge `Elf64_Sym` and `Elf64_Rela` structures to trick dynamic linker into resolving `system` without any libc leak. pwntools: `Ret2dlresolvePayload(elf, symbol="system", args=["/bin/sh"])`.
+
+## Kernel Exploitation (Quick Ref)
+See kernel.md, kernel-techniques.md, kernel-bypass.md for full coverage.
+
+## 9-Byte test+je Timing Leak (hxp 2018)
+7-byte `test BYTE PTR [rip+0x2], imm8` + 2-byte `je 0`. Flip immediate, measure round-trip time: <2s = crash (bit differs), >2s = hung (bit matches, loop fired).
+
+## IEEE 754 Double-as-Shellcode
+Write exactly six 8-byte doubles, compute `(d1+d2+d3+d4+d5+d6)/6` → executed. Pin exponent bits `0x4330` so addition behaves as integer addition. Encode shellcode as integer, pick d6 so sum hits it.
+
+## PIE Bypass via Consistent glibc Base
+32-bit PIE binary loads at fixed `0x56555000` across runs. Treat PIE base as constant: `print_flag = 0x56555000 + offset`.
+
+## Additional Exploit Patterns
+- Heap overlap via base conversion
+- Tree data structure stack underallocation
+- Esoteric language GOT overwrite
+- RtlCaptureContext Windows stack leak
